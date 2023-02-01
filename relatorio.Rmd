@@ -1,0 +1,547 @@
+---
+title: "title"
+author: "author"
+abstract: "abstract"
+header-includes:
+   - \usepackage[brazil]{babel}
+   - \usepackage{bm}
+   - \usepackage{float}
+geometry: left=1.7cm, right=1.7cm, top=3cm, bottom=3cm
+output:
+  bookdown::pdf_document2:
+editor_options:
+  chunk_output_type: console
+indent: true
+---
+
+
+
+```{r setup, include=F}
+
+options(digits = 3)  
+options(scipen = 999)
+ggplot2::theme_set(ggplot2::theme_minimal()) 
+knitr::opts_chunk$set(echo=F, message=F, warning=F, fig.pos = 'H', 
+                      fig.align = 'center', fig.width = 6, fig.height= 3.4)
+scale_fill_discrete = \(...) ggplot2::scale_fill_brewer(... , palette = "Set2")
+
+library(forecast)
+library(ggplot2)
+library(patchwork)
+library(ggfortify)
+library(dplyr)
+library(fracdiff)
+library(tseries)
+library(kableExtra)
+
+
+normal_teste = function(df, serie = ""){
+  data.frame(Teste = c('Shapiro Wilk', "Jarque-bera"),
+             p.value = c(shapiro.test(df)$p.value,
+                         tseries::jarque.bera.test(df)$p.value)
+             ) |> 
+    mutate(p.value = format.pval(p.value, eps = 0.001)) |> 
+    fastrep::tbl(paste('P-valores associados aos testes de normalidade para 
+                           a série', serie))
+}
+
+df <- readr::read_csv("data/Capacidade_Reservatório.csv")
+reservatorio <- df$Capacidade.Reservatório/100 # percentage
+reservatorio <- ts(reservatorio,start=c(2013,2),frequency=12) # time series
+n = length(reservatorio)
+h1 <- 12
+
+# Taking off the last 12 observations
+n_treino<-n-h1
+
+reservatorio_treino <-ts(reservatorio[1:n_treino], start=c(2013,2), frequency = 12)
+reservatorio_teste <- ts(reservatorio[(n_treino+1):n], start=c(2021,2), frequency = 12) 
+```
+
+```{r}
+source("analise_barmax/barma.r")
+source("analise_barmax/best.barma.r")
+source("KARMA_BARMA/karma.r")
+```
+
+
+# Introdução
+
+Usinas hidrelétricas são fontes de energia renovável e limpas, no entanto com 
+nítido impacto ambiental para sua construção caso feitas de maneira pouco 
+conscientes. No entanto diferentemente de outras tipos de energias, as usinas 
+não emitem gases estufa, não causam poluição do ar ou do solo. Os reservatórios 
+das usinas também são importantes porque permitem que as pessoas controlem a 
+quantidade de água que é usada para gerar energia. Isso significa que as usinas 
+podem ser usadas para regular o fluxo dos rios, o que ajuda a garantir uma fonte
+de água potável limpa.
+
+Os reservatórios hidrelétricos são fundamentais para o Brasil, pois além do 
+fornecimentos de energia limpa, também contribuí para o desenvolvimento 
+econômico do país. O Brasil possui um dos maiores parques hidrelétricos do mundo,
+responsável por mais de 65% da geração de energia elétrica no país de acordo
+com a Agência Nacional de Energia Elétrica (Aneel), assim sendo vital para 
+garantir a segurança energética do país. 
+
+No mundo, a energia hidrelétrica corresponde a cerca de 16% da produção global
+de energia de acordo com a Agência Internacional de Energia (IEA), diferença
+imensa comparada com a realidade brasileira, que possui 3 reservatórios entre
+os maiores do mundo. 
+
+A energia hidrelétrica se destaca no Brasil pela sua abundância em rios e outros
+canais aquíferos, possuindo enormes bacias hidrográficas e o maior aquífero do 
+mundo, o aquífero guarani. Sendo este multinacional, pois se extende para além
+das fronteiras brasileiras, também pertecendo a Argentina, Paraguai e Uruguai.
+
+Assim torna-se essencial conhecer e entender o comportamento mensal do nível de 
+volume útil (volume de água que pode ser transformado em energia) nos 
+reservatórios para que seja possível realizar medidas para garantir a segurança
+energética. Desse modo, quando forem realizadas previsões de que o volume útil 
+ficará abaixo do necessário para a sociedade, já tenham-se ações preparadas para
+evitar o desabastacimento elétrico.
+
+O presente trabalho pretende fornecer uma abordagem estatística de séries 
+temporais para o monitoramento do nível do volume útil no reservatório de Passo
+Fundo. Para que seja possível entender o comportamento do volume útil nos 
+meses futuros visando encontrar onde medidas de seguranças devem ser acionadas
+para garantir o fornecimento de energia. Para tal finalidade foram considerados
+três modelos: o modelo autorregressivo de médias móveis (ARMA), modelo beta 
+autorregressivo de médias moveis ($\beta$ARMA) e o modelo kumaraswamy 
+autorregressivo de médias móveis (KARMA), o qual é muito utilizado para a 
+modelagem de dados hidrológicos.
+
+A Usina Hidrelétrica de Passo Fundo foi escolhida para a análise, pois é uma das
+maiores usinas do Brasil e da região Sul. Ela está localizada na cidade de Passo
+Fundo, foi construída em 1978 e possui uma capacidade de 1.845 Megawatts. 
+É responsável por abastecer quase toda a região sul do país, pois a energia 
+produzida é distribuída para outras cidades através de três linhas de 
+transmissão que ligam Passo Fundo às cidades de Porto Alegre, São Leopoldo e 
+Santa Maria.
+
+A análise da série temporal de forma gráfica, nos informa que é imperceptível 
+uma tendência determínistica, no entanto podemos ver uma mudança no nível da média
+das observações antes de 2020 e há indícios de sazonalidade, por causa da 
+oscilação da série. 
+
+```{r n1, fig.cap='Distribuição do volume da Usina Hidrelétrica de Passo Fundo ao longo do tempo.'}
+reservatorio |> 
+  autoplot()
+```
+
+
+Outro ponto fundamental é analisar a autocorrelação serial, a Figura 
+\@ref(fig:n2) nos indica a existência de autocorrelação pois temos em diferentes
+pontos autocorrelações significativas.
+
+```{r n2, fig.cap="Funções de Autocorrelação e Autocorrelação Parcial do Volume Útil de água na Usina de Passo Fundo"}
+ggAcf(reservatorio) + labs(title='FAC') + 
+  ggPacf(reservatorio) + labs(title='FACP')
+```
+
+Temos na Tabela \@ref{tab:t1} um resumo descritivo da série onde o volume útil
+médio ficou em 0.517 e o mediano em 0.515, com o máximo sendo 0.99.
+
+```{r t1}
+medidas = fastrep::describe(tibble('volume util' = reservatorio)) %>% 
+  select(Média = mean, Mediana = median, `Desvio Padrão` = sd, Mínimo = min, 
+         Máximo = max) %>% 
+  t()
+
+medidas = medidas %>% tibble(Medidas=rownames(medidas))
+colnames(medidas) = c("Volume útil", "Medidas")
+
+medidas %>% select(Medidas, `Volume útil`) %>% 
+  fastrep::tbl("Resumo descritivo da variável volume útil do reservatório Passo Fundo.")
+```
+
+
+# Ajuste dos modelos 
+
+Para a seleção dos modelos utilizou-se diferentes funções disponível no R,
+como a função `auto.arima` para o ajuste dos modelos ARMA, `best.barma` e `barma`
+para o ajuste dos modelos $\beta$ARMA e `karma` para o ajuste do modelo KARMA,
+para a modelagem de tendência e sazonalidade foram incluídos como covariáveis
+a função x, a função cosseno e as duas ao mesmo tempo. Assim foi realizada uma 
+busca de forma exaustiva de modelos que minimizassem o critério de AIC, mas 
+que também não se sobreajustassem aos dados de treino para que a previsão dos 
+modelos fiquem coerentes com a realidade. Assim ajustamos 1 modelo ARMA, 2 modelos
+$\beta$ARMA e 2 modelos KARMA.
+
+```{r}
+mX <- 1:n_treino # covariavel para modelar a tendencia (dentro do intervalo)
+mX_hat <- (n_treino+1):(n_treino+h1) # ocorrencias da covariavel usadas para previsoes
+
+C<-cos(2*pi*mX/12) # in sample 
+C_hat<-cos(2*pi*mX_hat/12) # out of sample
+
+S<-sin(2*pi*mX/12) # in sample
+S_hat<-sin(2*pi*mX_hat/12) # out of sample
+
+mX2 <-cbind(1:n_treino, cos(2*pi*(1:n_treino)/52)) # covariavel para modelar a tendencia (dentro do intervalo)
+mX_hat2 <- cbind((n_treino+1):(n_treino+h1), cos(2*pi*((n_treino+1):(n_treino+h1))/52))# ocorrencias da covariavel usadas para previsoes
+
+mX_barma<-cbind(mX,C) # in sample
+mX_hat_barma<-cbind(mX_hat,C_hat) # out of sample
+```
+
+
+## Ajuste do modelo ARMA
+
+A Tabela \@ref{tab:t2} apresenta as estimativas para o modelo ARMA(2,0) que tem
+como covariáveis a função x para modelagem de tendência e a função cosseno para
+a modelagem da sazonalidade e verificou que todos os parâmetros são significativos
+ao nível de significância de 5%.
+
+
+```{r t2}
+modelo1=auto.arima(reservatorio_treino, max.p=5, max.q=5, max.P=0, max.Q=0, 
+                   max.order=5, max.d=2, max.D=0, start.p=1, start.q=1, 
+                   start.P=1, start.Q=1, xreg=mX2)
+
+coef_arma = lmtest::coeftest(modelo1)
+coef_arma[,2]
+
+table_modelo1 = tibble(Coeficientes = c(names(modelo1$coef)),
+                           Estimativa = modelo1$coef,
+                          `Erro padrão` = coef_arma[,2],
+                          `Valor Z` = coef_arma[,3],
+                          `P-valor` = coef_arma[,4]
+                           )
+
+table_modelo1 |>  
+  mutate(`P-valor` = format.pval(`P-valor`, eps = 0.001)) |>
+  fastrep::tbl("Resumo do Ajuste do Modelo ARMA")
+```
+
+
+## Ajuste dos modelos BARMA
+
+As Tabelas \@ref{tab:t3} e \@ref{tab:t4} apresentam as estimativas para os 
+modelos $\beta$ARMA, onde verificou que todos os parâmetros são significativos
+ao nível de significância de 5%. Na Tabela \@ref{tab:t3} tem-se o 
+$\beta$ARMA(6,6), que tem como covariáveis a função cosseno e foi escolhido por
+ter o menor AIC entre todos os modelos ajustado pelo `best.barma`. Na 
+Tabela \@ref{tab:t4} tem-se o modelo $\beta$ARMA(4,2) que contém como 
+covariáveis a função x para modelagem de tendência e a função cosseno para
+a modelagem da sazonalidade e foi selecionado por ser o modelo mais parcimonioso,
+ou seja, com bom AIC, mas sem tantos parâmetros para evitar o sobreajuste aos
+dados de treino da série temporal.
+
+```{r t3}
+fit_barma<-barma(reservatorio_treino,ar=c(1,2,3,4,5,6),ma=c(1,2,3,4,5,6),h=h1, 
+                 diag=1, X = C, X_hat = C_hat)
+
+fit_barma2<-barma(reservatorio_treino,ar=c(1,2,3,4),ma=c(1,2),h=h1,diag=1,
+                  X = mX_barma, X_hat = mX_hat_barma)
+
+fit_barma$model |> as.data.frame() |> 
+  mutate(`Pr(>|z|)` = format.pval(`Pr(>|z|)`, eps = 0.001)) |>  
+  select(Estimativa = Estimate, `Erro Padrão` =  `Std. Error`, 
+         `Valor Z` = `z value`, `P-valor` = `Pr(>|z|)`) |>
+  fastrep::tbl("Resumo do Ajuste do Modelo BARMA(6,6)")
+```
+
+
+```{r t4}
+fit_barma2$model |> as.data.frame() |> 
+  mutate(`Pr(>|z|)` = format.pval(`Pr(>|z|)`, eps = 0.001)) |>  
+  select(Estimativa = Estimate, `Erro Padrão` =  `Std. Error`, 
+         `Valor Z` = `z value`, `P-valor` = `Pr(>|z|)`) |>
+  fastrep::tbl("Resumo do Ajuste do Modelo BARMA(4,2)")
+```
+
+
+
+## Ajuste dos modelos KARMA
+
+As Tabelas \@ref{tab:t5} e \@ref{tab:t6} apresentam as estimativas para os 
+modelos KARMA, onde verificou que todos os parâmetros são significativos
+ao nível de significância de 5%. Na Tabela \@ref{tab:t5} tem-se o 
+KARMA(5,4), que tem como covariáveis a função cosseno e foi escolhido ser o 
+modelo com menor AIC e menor número de parâmetros, pois temos que o $\phi_1$,
+$\phi_2$ e $\phi_4$ não foram significativos. Na Tabela \@ref{tab:t6} tem-se o 
+modelo KARMA(5,4) que contém como covariáveis a função cosseno e foi selecionado
+por ter o menor AIC, no entanto, $\phi_4$ não foi significativo.
+
+
+```{r t5}
+fit_karma = karma(reservatorio_treino,ar=c(3,5),ma=c(1,2,3,4),h=h1,diag=1,
+                  X = C, X_hat = C_hat)
+
+fit_karma2 = karma(reservatorio_treino,ar=c(1,2,3,5),ma=c(1,2,3),h=h1,diag=1, 
+                   X = C, X_hat = C_hat)
+
+fit_karma$model |> as.data.frame() |> 
+  mutate(`Pr(>|z|)` = format.pval(`Pr(>|z|)`, eps = 0.001)) |>  
+  select(Estimativa = Estimate, `Erro Padrão` =  `Std. Error`, 
+         `Valor Z` = `z value`, `P-valor` = `Pr(>|z|)`) |>
+  fastrep::tbl("Resumo do Ajuste do Modelo KARMA(5,4)")
+```
+
+```{r t6}
+fit_karma2$model |> as.data.frame() |> 
+  mutate(`Pr(>|z|)` = format.pval(`Pr(>|z|)`, eps = 0.001)) |>  
+  select(Estimativa = Estimate, `Erro Padrão` =  `Std. Error`, 
+         `Valor Z` = `z value`, `P-valor` = `Pr(>|z|)`) |>
+  fastrep::tbl("Resumo do Ajuste do Modelo KARMA(5,3)")
+```
+
+
+```{r}
+residuos_arma = as.vector(modelo1$residuals)
+residuos_barma1 = as.vector(reservatorio_treino-fit_barma$fitted)[6:n_treino]
+residuos_barma2 = as.vector(reservatorio_treino-fit_barma2$fitted)[7:n_treino]
+residuos_karma1 = as.vector(reservatorio_treino-fit_karma$fitted)[6:n_treino]
+residuos_karma2 = as.vector(reservatorio_treino-fit_karma2$fitted)[6:n_treino]
+
+```
+
+
+## Avaliação dos Modelos
+
+Antes de verificar a adequação dos modelos, realiza-se a comparação entre eles
+com duas medidas usuais para este fim: Erro Quadrático Médio (EQM) e Erro 
+Percentual Absoluto Médio (MAPE), medidas que avaliam a diferenças entre os 
+valores reais e os valores preditos pelo modelo, tanto na base de treino, como
+na base de teste.
+
+Para que assim seja possível avaliar qual modelo está se sobressaindo na 
+predição do nível do volume útil do reservatório e algum dos modelos estão
+se sobreajustando aos dados de treino.
+```{r}
+
+(eqm_barma1 = (sum(residuos_barma1^2))/length(residuos_barma1))
+(eqm_barma2 = (sum(residuos_barma2^2))/length(residuos_barma2))
+(eqm_karma1 = (sum(residuos_karma1^2))/length(residuos_karma1))
+(eqm_karma2 = (sum(residuos_karma2^2))/length(residuos_karma2))
+(eqm_arma = (sum(residuos_arma^2))/length(residuos_arma))
+
+############### MAPE #################
+
+(maple_barma1 = sum( abs(residuos_barma1)/abs(reservatorio_treino[6:n_treino]))/ 
+   length(residuos_barma1))
+(maple_barma2 = sum( abs(residuos_barma2)/abs(reservatorio_treino[7:n_treino]))/
+    length(residuos_barma2))
+(maple_karma1 = sum( abs(residuos_karma1)/abs(reservatorio_treino[6:n_treino]))/ 
+   length(residuos_karma1))
+(maple_karma2 = sum( abs(residuos_karma2)/abs(reservatorio_treino[6:n_treino]))/
+    length(residuos_karma2))
+(maple_arma = sum( abs(residuos_arma)/abs(reservatorio_treino) )/ 
+    length(residuos_arma))
+
+###################### EQM e MAPE período previsao #######################
+
+predict_arma=predict(modelo1, n.ahead=h1, newxreg = mX2)
+
+############### EQM #################
+residuos_beta_prev1 = (reservatorio_teste-fit_barma$forecast)
+residuos_beta_prev2 = (reservatorio_teste-fit_barma2$forecast)
+residuos_kuma_prev1 = (reservatorio_teste-fit_karma$forecast)
+residuos_kuma_prev2 = (reservatorio_teste-fit_karma2$forecast)
+residuos_arma_prev = (reservatorio_teste-as.vector(predict_arma$pred[1:h1]))
+
+(eqm_beta_prev = (sum(residuos_beta_prev1^2))/length(residuos_beta_prev1))
+(eqm_beta_prev2 = (sum(residuos_beta_prev2^2))/length(residuos_beta_prev2))
+(eqm_kuma_prev = (sum(residuos_kuma_prev2^2))/length(residuos_kuma_prev1))
+(eqm_kuma_prev2 = (sum(residuos_kuma_prev1^2))/length(residuos_kuma_prev2))
+(eqm_arma_prev = (sum(residuos_arma_prev^2))/length(residuos_arma_prev))
+
+
+############### MAPE #################
+
+(maple_beta_prev = sum( abs(residuos_beta_prev1)/abs(reservatorio_teste) )/ 
+   length(residuos_beta_prev1))
+(maple_beta_prev2 = sum( abs(residuos_beta_prev2)/abs(reservatorio_teste) )/ 
+    length(residuos_beta_prev2))
+(maple_kuma_prev = sum( abs(residuos_kuma_prev1)/abs(reservatorio_teste) )/ 
+    length(residuos_kuma_prev1))
+(maple_kuma_prev2 = sum( abs(residuos_kuma_prev2)/abs(reservatorio_teste) )/ 
+    length(residuos_kuma_prev2))
+(maple_ar_prev = sum( abs(residuos_arma_prev)/abs(reservatorio_teste) )/ 
+    length(residuos_arma_prev))
+
+```
+
+NA Tabela \@ref{tab:t7} são apresentados os valores de EQM e MAPE tanto para os
+dados de treino, quanto de teste. Percebe-se que o $\beta$ARMA (4,2) é o modelo
+que apresenta melhor ajuste no treinamento, porém não mantém o mesmo desempenho
+no teste. Os modelos que se destacam quanto ao teste é o KARMA(5,4), que 
+apresenta o melhor desempenho e o ARMA(2,0) que fica com desempenho ligeiramente 
+pior. Portanto, 
+Na Tabela 4 s ̃ao apresentados os valores de EQM e
+MAPE para os modelos no per ́ıodo de ajuste e per ́ıodo da previs ̃ao passos a frente. Verifica-se
+que os valores para o modelo βARMA s ̃ao menores, tanto no per ́ıodo de ajuste quanto no
+per ́ıodo da previs ̃ao. Ainda no per ́ıodo de previs ̃ao a diferen ̧ca entre os valores das medidas
+consideradas  ́e maior.
+
+```{r t7}
+tibble('Modelo' = c('ARMA(2,0)', 'BARMA(6,6)', 'BARMA(4,2)', 'KARMA(5,4)', 
+                    'KARMA(5,3)'),
+       'EQM TREINO' = c(eqm_arma, eqm_barma1, eqm_barma2, eqm_karma1, 
+                        eqm_karma1),
+       'MAPE TREINO' = c(maple_arma, maple_barma1, maple_barma2, maple_karma1,
+                         maple_karma2),
+       'EQM TESTE' = c(eqm_arma_prev, eqm_beta_prev, eqm_beta_prev2,
+                       eqm_kuma_prev, eqm_kuma_prev2),
+       'MAPE TESTE' = c(maple_ar_prev, maple_beta_prev, maple_beta_prev2, 
+                        maple_kuma_prev, maple_kuma_prev2)) |>
+  fastrep::tbl("Métricas de Avaliação dos Modelos")
+```
+
+
+# Análise de resíduo
+
+Para garantir que os modelos satisfaçam os pressupostos teóricos, emprega-se
+técnicas de visualização e testes de hipóteses, para avaliar como os resíduos 
+dos modelos propostos se comportam.
+
+Pode-se observar na Figura \@ref{fig:res} que em apenas uma defasagem o valor
+é superior ao valor determinado pelo Intervalo de Confiança, dessa forma,
+aparentemente a suposição de resíduos não correlacionaodos é satisfeita.
+
+
+```{r res, fig.cap="ACF e PACF dos resíduos do Modelo ARMA e KARMA"}
+resi1=as.vector(residuals(modelo1))
+resi_padrao1=as.vector((modelo1$residuals)/(sd(resi1)))
+res=fit_karma$resid1
+
+(ggAcf(res) + labs(title='Resíduo KARMA') | ggPacf(res) + 
+  labs(title='Resíduo KARMA'))/
+  (ggAcf(resi_padrao1) + labs(title='Resíduo ARMA') | ggPacf(resi_padrao1) + 
+  labs(title='Resíduo ARMA'))
+  
+```
+
+A Figura \@ref{fig:res2} apresenta o gráfico Q-Q Plot e o Envelope simulado,
+verificando que a maioria dos pontos está próximo a linha diagonal imagińaria, 
+com isso podemos supor que há proximidade dos resíduos e a distribuição normal e
+no envelope simulado temos que todos os pontos estão dentro das bandas de 
+confiança, logo há indicativos de um bom ajuste do modelo ados dados.
+
+
+```{r res2, fig.cap="QQ-Plot e Envelope simulado dos resíduos do Modelo ARMA e KARMA"}
+max_r<- max(resi_padrao1,na.rm=T)
+min_r<- min(resi_padrao1,na.rm=T)
+max_k<- max(res,na.rm=T)
+min_k<- min(res,na.rm=T)
+
+q1 <- qqnorm(resi_padrao1, pch = "+",
+       xlim=c(0.95*min_r,max_r*1.05),
+       ylim=c(0.95*min_r,max_r*1.05),
+       main="ARMA",xlab="Quantis Normais",ylab="Quantis Empíricos") 
+
+q2 <- qqnorm(res, pch = "+",
+       xlim=c(0.95*min_k,max_r*1.05),
+       ylim=c(0.95*min_k,max_r*1.05),
+       main="KARMA",xlab="Quantis Normais",ylab="Quantis Empíricos") 
+
+q3 = ggpubr::ggqqplot(resi_padrao1) + 
+  labs(y = "Quantis Amostrais",x="Quantis Teóricos",title="ARMA")
+
+q3 = ggpubr::ggqqplot(res) + 
+  labs(y = "Quantis Amostrais",x="Quantis Teóricos",title="KARMA")
+
+cowplot::plot_grid(q1,q2, q3, q4, ncol = 2)
+```
+
+Na Figura \@ref{fig:res3} apresenta os resíduos padronizados pelo índice, 
+percebe-se um comportamento aleatório e todos os valores entre -3 e 3 e poucos
+foram do intervalo -2 e 2.
+
+```{r res3, fig.cap="Resíduos versus índices dos Modelos ARMA e KARMA"}
+df_resi<-data.frame(resi_padrao1)
+df_res<-data.frame(res)
+ggplot(df_resi)+
+  geom_point(aes(x=1:nrow(df_resi),y=resi_padrao1),size=0.8) +
+  labs(x="Índice",y="Resíduo", title='ARMA')+
+  geom_hline(yintercept = -2,linetype="dashed",colour = "orange",linewidth=0.3)+
+  geom_hline(yintercept = -3,linetype="longdash",colour = "orange",linewidth=0.3)+
+  geom_hline(yintercept = 2,linetype="dashed",colour = "red",linewidth=0.3)+
+  geom_hline(yintercept = 3,linetype="longdash",colour = "red",linewidth=0.3) +
+  ggplot(df_res)+
+  geom_point(aes(x=1:nrow(df_res),y=res),size=0.8) +
+  labs(x="Índice",y="Resíduo", title='KARMA')+
+  geom_hline(yintercept = -2,linetype="dashed",colour = "orange",linewidth=0.3)+
+  geom_hline(yintercept = -3,linetype="longdash",colour = "orange",linewidth=0.3)+
+  geom_hline(yintercept = 2,linetype="dashed",colour = "red",linewidth=0.3)+
+  geom_hline(yintercept = 3,linetype="longdash",colour = "red",linewidth=0.3)
+
+```
+
+Para os testes de hipóteses considera-se as seguintes opções:
+
+**Ljung-Box e Box-Pierce** para testar a independência dos resíduos, com a 
+seguinte hipótese:
+
+$$
+H_0:\text{Os dados são independentes e identicamente distribuídos.}
+$$
+
+**Teste Aumentado de Dickey-Fuller (ADF)** para testar a estacionaridade dos 
+resíduos, com a seguinte hipótese:
+$$H_0:\text{Os resíduos apresentam tendência}$$
+$$H_1: \text{Resíduos estacionários}$$
+**Shapiro-Wilk**: Será o teste de normalidade que usaremos, tem-se a seguinte
+hipótese nula:
+
+$$
+H_0:\text{ Os dados seguem uma distribuição Normal}
+$$
+
+
+Em ambos os modelos temos que pelo teste de Ljung-Box a correlação é nula, assim
+como não há evidência contra a hipótese de normalidade dos resíduos e a Tabela 
+\@ref{tab:pvalue} indica que os resíduos são estacionarios de acordo com o teste
+ADF, considerando todos os erros a um nível de significância de 5%.
+
+```{r pvalue}
+
+tibble(Modelo = c('ARMA', 'KARMA'), 
+       `Teste ADF` = c(adf.test(resi_padrao1)$p.value,adf.test(res)$p.value),
+       `Normalidade` = c(shapiro.test(resi_padrao1)$p.value, 
+                         shapiro.test(res)$p.value),
+       `Ljung-Box` = c(Box.test(resi_padrao1, lag = 30, type = c("Ljung-Box"), 
+                                fitdf = 0)$p.value,
+                       Box.test(res, lag = 20, type = c("Ljung-Box"), 
+                                fitdf = 0)$p.value)) |>
+  fastrep::tbl("P-valores dos testes estatísticos")
+
+```
+
+# Predição
+
+
+```{r}
+t3<-seq(as.Date("2013/02/01"), by = "month", length.out = 120) 
+df3<-data.frame(t3,reservatorio,pred=c(fit_karma$fitted,fit_karma$forecast))
+ggplot(df3)+
+  geom_line(aes(x=t3,y=reservatorio))+
+  geom_line(aes(x=t3,y=pred),colour = "red")+
+  geom_vline(xintercept = as.Date("2021/11/01"),linetype="dashed",colour = "black",size=0.5)+
+  labs(x="Tempo (meses)",
+       y="Taxa de desocupação")
+```
+
+```{r}
+mX <- 1:n # covariavel para modelar a tendencia (dentro do intervalo)
+mX_hat <- (n+1):(n+h1) # ocorrencias da covariavel usadas para previsoes
+
+C<-cos(2*pi*mX/12) # in sample 
+C_hat<-cos(2*pi*mX_hat/12) # out of sample
+fit_karma = karma(reservatorio,ar=c(3,5),ma=c(1,2,3,4),h=h1,diag=1,
+                  X = C, X_hat = C_hat)
+tempo<-seq(as.Date("2013/02/01"), by = "month", length.out = 132) 
+
+df3<-data.frame(serie=c(reservatorio,fit_karma$forecast), 
+                predicao=c(rep("Série", length(reservatorio)), 
+                           rep("Predição", length(fit_karma$forecast))),
+                tempo=tempo)
+ggplot(df3)+
+  geom_line(aes(x=tempo,y=serie, colour=predicao))+
+  geom_vline(xintercept = as.Date("2023/01/01"),linetype="dashed",colour = "black",size=0.5)+
+  labs(x="Tempo (meses)",
+       y="Taxa de desocupação")
+
+```
+
+
