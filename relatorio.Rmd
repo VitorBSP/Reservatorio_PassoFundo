@@ -1,17 +1,23 @@
 ---
-title: "title"
-author: "author"
-abstract: "abstract"
+title: "Um estudo temporal do volume útil da usina hidrelétrica de Passo Fundo em 2023"
+author: "Vítor Pereira"
+abstract: "O atual trabalho pretende visa utilizar a abordagem de séries temporais
+com taxas e proporções para a análise do nível do volume útil na usina hidrelétrica de Passo
+Fundo. Visando compreender comportamento do volume útil nos 
+meses futuros, para possibilitar a definição de medidas de seguranças para garantir o fornecimento de energia. Para isso, verificou-se que o modelo com melhor ajuste foi o modelo Kumaraswamy autorregressivo de médias móveis (KARMA), modelo que utiliza a distribuição Kumaraswamy a qual possui suporte para taxas e proporções e é históricamente usados para dados hidrológicos."
 header-includes:
    - \usepackage[brazil]{babel}
    - \usepackage{bm}
    - \usepackage{float}
-geometry: left=1.7cm, right=1.7cm, top=3cm, bottom=3cm
+geometry: left=1.7cm, right=1.7cm, top=2.5cm, bottom=2.5cm
 output:
   bookdown::pdf_document2:
 editor_options:
   chunk_output_type: console
 indent: true
+bibliography: bib.bib
+nocite: '@*'
+link-citations: true
 ---
 
 
@@ -138,10 +144,10 @@ ggAcf(reservatorio) + labs(title='FAC') +
   ggPacf(reservatorio) + labs(title='FACP')
 ```
 
-Temos na Tabela \@ref{tab:t1} um resumo descritivo da série onde o volume útil
+Temos na Tabela \@ref{tab:tab1} um resumo descritivo da série onde o volume útil
 médio ficou em 0.517 e o mediano em 0.515, com o máximo sendo 0.99.
 
-```{r t1}
+```{r}
 medidas = fastrep::describe(tibble('volume util' = reservatorio)) %>% 
   select(Média = mean, Mediana = median, `Desvio Padrão` = sd, Mínimo = min, 
          Máximo = max) %>% 
@@ -149,7 +155,10 @@ medidas = fastrep::describe(tibble('volume util' = reservatorio)) %>%
 
 medidas = medidas %>% tibble(Medidas=rownames(medidas))
 colnames(medidas) = c("Volume útil", "Medidas")
+```
 
+
+```{r tab1}
 medidas %>% select(Medidas, `Volume útil`) %>% 
   fastrep::tbl("Resumo descritivo da variável volume útil do reservatório Passo Fundo.")
 ```
@@ -165,7 +174,8 @@ a função x, a função cosseno e as duas ao mesmo tempo. Assim foi realizada u
 busca de forma exaustiva de modelos que minimizassem o critério de AIC, mas 
 que também não se sobreajustassem aos dados de treino para que a previsão dos 
 modelos fiquem coerentes com a realidade. Assim ajustamos 1 modelo ARMA, 2 modelos
-$\beta$ARMA e 2 modelos KARMA.
+$\beta$ARMA e 2 modelos KARMA separando os dados em treino de fevereiro de 2013
+até janeiro de 2022, com o teste sendo de fevereiro de 2022 até janeiro de 2023.
 
 ```{r}
 mX <- 1:n_treino # covariavel para modelar a tendencia (dentro do intervalo)
@@ -193,13 +203,12 @@ a modelagem da sazonalidade e verificou que todos os parâmetros são significat
 ao nível de significância de 5%.
 
 
-```{r t2}
+```{r results=F, include=FALSE, echo=F}
 modelo1=auto.arima(reservatorio_treino, max.p=5, max.q=5, max.P=0, max.Q=0, 
                    max.order=5, max.d=2, max.D=0, start.p=1, start.q=1, 
                    start.P=1, start.Q=1, xreg=mX2)
 
 coef_arma = lmtest::coeftest(modelo1)
-coef_arma[,2]
 
 table_modelo1 = tibble(Coeficientes = c(names(modelo1$coef)),
                            Estimativa = modelo1$coef,
@@ -207,7 +216,10 @@ table_modelo1 = tibble(Coeficientes = c(names(modelo1$coef)),
                           `Valor Z` = coef_arma[,3],
                           `P-valor` = coef_arma[,4]
                            )
+```
 
+
+```{r t2}
 table_modelo1 |>  
   mutate(`P-valor` = format.pval(`P-valor`, eps = 0.001)) |>
   fastrep::tbl("Resumo do Ajuste do Modelo ARMA")
@@ -227,13 +239,16 @@ a modelagem da sazonalidade e foi selecionado por ser o modelo mais parcimonioso
 ou seja, com bom AIC, mas sem tantos parâmetros para evitar o sobreajuste aos
 dados de treino da série temporal.
 
-```{r t3}
+```{r results=F, include=FALSE, echo=F}
 fit_barma<-barma(reservatorio_treino,ar=c(1,2,3,4,5,6),ma=c(1,2,3,4,5,6),h=h1, 
                  diag=1, X = C, X_hat = C_hat)
 
 fit_barma2<-barma(reservatorio_treino,ar=c(1,2,3,4),ma=c(1,2),h=h1,diag=1,
                   X = mX_barma, X_hat = mX_hat_barma)
+```
 
+
+```{r t3}
 fit_barma$model |> as.data.frame() |> 
   mutate(`Pr(>|z|)` = format.pval(`Pr(>|z|)`, eps = 0.001)) |>  
   select(Estimativa = Estimate, `Erro Padrão` =  `Std. Error`, 
@@ -264,13 +279,16 @@ modelo KARMA(5,4) que contém como covariáveis a função cosseno e foi selecio
 por ter o menor AIC, no entanto, $\phi_4$ não foi significativo.
 
 
-```{r t5}
+```{r results=F, include=FALSE, echo=F}
 fit_karma = karma(reservatorio_treino,ar=c(3,5),ma=c(1,2,3,4),h=h1,diag=1,
                   X = C, X_hat = C_hat)
 
 fit_karma2 = karma(reservatorio_treino,ar=c(1,2,3,5),ma=c(1,2,3),h=h1,diag=1, 
                    X = C, X_hat = C_hat)
+```
 
+
+```{r t5}
 fit_karma$model |> as.data.frame() |> 
   mutate(`Pr(>|z|)` = format.pval(`Pr(>|z|)`, eps = 0.001)) |>  
   select(Estimativa = Estimate, `Erro Padrão` =  `Std. Error`, 
@@ -308,7 +326,7 @@ na base de teste.
 Para que assim seja possível avaliar qual modelo está se sobressaindo na 
 predição do nível do volume útil do reservatório e algum dos modelos estão
 se sobreajustando aos dados de treino.
-```{r}
+```{r results=F, include=FALSE, echo=F}
 
 (eqm_barma1 = (sum(residuos_barma1^2))/length(residuos_barma1))
 (eqm_barma2 = (sum(residuos_barma2^2))/length(residuos_barma2))
@@ -367,12 +385,10 @@ dados de treino, quanto de teste. Percebe-se que o $\beta$ARMA (4,2) é o modelo
 que apresenta melhor ajuste no treinamento, porém não mantém o mesmo desempenho
 no teste. Os modelos que se destacam quanto ao teste é o KARMA(5,4), que 
 apresenta o melhor desempenho e o ARMA(2,0) que fica com desempenho ligeiramente 
-pior. Portanto, 
-Na Tabela 4 s ̃ao apresentados os valores de EQM e
-MAPE para os modelos no per ́ıodo de ajuste e per ́ıodo da previs ̃ao passos a frente. Verifica-se
-que os valores para o modelo βARMA s ̃ao menores, tanto no per ́ıodo de ajuste quanto no
-per ́ıodo da previs ̃ao. Ainda no per ́ıodo de previs ̃ao a diferen ̧ca entre os valores das medidas
-consideradas  ́e maior.
+pior. 
+
+Portanto, verificaremos a adequação dos dois modelos supracitados na 
+próxima seção, analisando se ambos estão estatiscamente bem ajustados. 
 
 ```{r t7}
 tibble('Modelo' = c('ARMA(2,0)', 'BARMA(6,6)', 'BARMA(4,2)', 'KARMA(5,4)', 
@@ -391,9 +407,9 @@ tibble('Modelo' = c('ARMA(2,0)', 'BARMA(6,6)', 'BARMA(4,2)', 'KARMA(5,4)',
 
 # Análise de resíduo
 
-Para garantir que os modelos satisfaçam os pressupostos teóricos, emprega-se
-técnicas de visualização e testes de hipóteses, para avaliar como os resíduos 
-dos modelos propostos se comportam.
+Para garantir que os modelos KARMA(5,4) e ARMA(2,0) satisfaçam os pressupostos
+teóricos, emprega-se técnicas de visualização e testes de hipóteses, para 
+avaliar como os resíduos dos modelos propostos se comportam.
 
 Pode-se observar na Figura \@ref{fig:res} que em apenas uma defasagem o valor
 é superior ao valor determinado pelo Intervalo de Confiança, dessa forma,
@@ -438,7 +454,7 @@ q2 <- qqnorm(res, pch = "+",
 q3 = ggpubr::ggqqplot(resi_padrao1) + 
   labs(y = "Quantis Amostrais",x="Quantis Teóricos",title="ARMA")
 
-q3 = ggpubr::ggqqplot(res) + 
+q4 = ggpubr::ggqqplot(res) + 
   labs(y = "Quantis Amostrais",x="Quantis Teóricos",title="KARMA")
 
 cowplot::plot_grid(q1,q2, q3, q4, ncol = 2)
@@ -454,17 +470,25 @@ df_res<-data.frame(res)
 ggplot(df_resi)+
   geom_point(aes(x=1:nrow(df_resi),y=resi_padrao1),size=0.8) +
   labs(x="Índice",y="Resíduo", title='ARMA')+
-  geom_hline(yintercept = -2,linetype="dashed",colour = "orange",linewidth=0.3)+
-  geom_hline(yintercept = -3,linetype="longdash",colour = "orange",linewidth=0.3)+
-  geom_hline(yintercept = 2,linetype="dashed",colour = "red",linewidth=0.3)+
-  geom_hline(yintercept = 3,linetype="longdash",colour = "red",linewidth=0.3) +
+  geom_hline(yintercept = -2,linetype="dashed",colour = "orange", 
+             linewidth=0.3)+
+  geom_hline(yintercept = -3,linetype="longdash",colour = "orange", 
+             linewidth=0.3)+
+  geom_hline(yintercept = 2,linetype="dashed",colour = "red", 
+             linewidth=0.3)+
+  geom_hline(yintercept = 3,linetype="longdash",colour = "red", 
+             linewidth=0.3) +
   ggplot(df_res)+
   geom_point(aes(x=1:nrow(df_res),y=res),size=0.8) +
   labs(x="Índice",y="Resíduo", title='KARMA')+
-  geom_hline(yintercept = -2,linetype="dashed",colour = "orange",linewidth=0.3)+
-  geom_hline(yintercept = -3,linetype="longdash",colour = "orange",linewidth=0.3)+
-  geom_hline(yintercept = 2,linetype="dashed",colour = "red",linewidth=0.3)+
-  geom_hline(yintercept = 3,linetype="longdash",colour = "red",linewidth=0.3)
+  geom_hline(yintercept = -2,linetype="dashed",colour = "orange", 
+             linewidth=0.3)+
+  geom_hline(yintercept = -3,linetype="longdash",colour = "orange", 
+             linewidth=0.3)+
+  geom_hline(yintercept = 2,linetype="dashed",colour = "red", 
+             linewidth=0.3)+
+  geom_hline(yintercept = 3,linetype="longdash",colour = "red", 
+             linewidth=0.3)
 
 ```
 
@@ -508,21 +532,36 @@ tibble(Modelo = c('ARMA', 'KARMA'),
 
 ```
 
+Deste modo, conclui-se que ambos os modelos estão bem ajustados. No entanto, o
+modelo selecionado para a predição dos dados será o KARMA(5,4) que foi superior
+nas métricas no dados de teste.
+
 # Predição
 
+Após garantir que os modelos estão bem ajustados, verifica-se como estão suas
+predições em contraste com o real, como podemos perceber na Figura 
+\@ref{fig:pred}, também indica boa qualidade do ajuste, sem sobreajuste no 
+treino e com valores coerentes no teste, no entanto, com nítida subestimação dos
+valores medianos e suavização dos picos decrescentes.
 
-```{r}
-t3<-seq(as.Date("2013/02/01"), by = "month", length.out = 120) 
-df3<-data.frame(t3,reservatorio,pred=c(fit_karma$fitted,fit_karma$forecast))
+```{r pred, fig.cap="Ajuste e previsão de 12 meses do modelo KARMA"}
+tempo<-seq(as.Date("2013/02/01"), by = "month", length.out = 120) 
+df3<-data.frame(tempo, reservatorio, 
+                pred=c(fit_karma$fitted,fit_karma$forecast))
 ggplot(df3)+
-  geom_line(aes(x=t3,y=reservatorio))+
-  geom_line(aes(x=t3,y=pred),colour = "red")+
-  geom_vline(xintercept = as.Date("2021/11/01"),linetype="dashed",colour = "black",size=0.5)+
+  geom_line(aes(x=tempo,y=reservatorio))+
+  geom_line(aes(x=tempo,y=pred),colour = "red")+
+  geom_vline(xintercept = as.Date("2021/11/01"),linetype="dashed", 
+             colour = "black",size=0.5)+
   labs(x="Tempo (meses)",
        y="Taxa de desocupação")
 ```
 
-```{r}
+Na  Figura \@ref{fig:prev}, temos a previsão para o volume útil da usina 
+hidréletrica em 2023, onde percebe-se que não tem-se nenhum valor muito baixo,
+garantindo uma estabilidade energética para as cidades no Rio Grande do Sul.
+
+```{r results=F, include=FALSE, echo=F}
 mX <- 1:n # covariavel para modelar a tendencia (dentro do intervalo)
 mX_hat <- (n+1):(n+h1) # ocorrencias da covariavel usadas para previsoes
 
@@ -530,18 +569,44 @@ C<-cos(2*pi*mX/12) # in sample
 C_hat<-cos(2*pi*mX_hat/12) # out of sample
 fit_karma = karma(reservatorio,ar=c(3,5),ma=c(1,2,3,4),h=h1,diag=1,
                   X = C, X_hat = C_hat)
-tempo<-seq(as.Date("2013/02/01"), by = "month", length.out = 132) 
+tempo<-seq(as.Date("2013/02/01"), by = "month", length.out = 132)
+```
 
+
+```{r prev, fig.cap="Previsão do volume útil do reservatório Passo Fundo em 2023"}
 df3<-data.frame(serie=c(reservatorio,fit_karma$forecast), 
                 predicao=c(rep("Série", length(reservatorio)), 
                            rep("Predição", length(fit_karma$forecast))),
                 tempo=tempo)
 ggplot(df3)+
   geom_line(aes(x=tempo,y=serie, colour=predicao))+
-  geom_vline(xintercept = as.Date("2023/01/01"),linetype="dashed",colour = "black",size=0.5)+
+  geom_vline(xintercept = as.Date("2023/01/01"),linetype="dashed", 
+             colour = "black",size=0.5)+
   labs(x="Tempo (meses)",
        y="Taxa de desocupação")
-
 ```
 
 
+# Conclusão
+
+Constata-se que o modelo de séries temporais KARMA, o qual historicamente
+é utilizado para ajuste de dados hidrológicos e especificamente para modelagem
+de taxas e proporções, se mostra superior aos modelo ARMA e $\beta$ARMA também
+para o ajuste do volume útil da usina hidréletrica de Passo Fundo. Nota-se que 
+tanto o modelo ARMA, quanto KARMA apresentam bom ajuste, conforme podemos 
+concluir pela análise dos resíduos. 
+
+Dessa forma, utilizamos o KARMA para a previsão do volume útil no ano de 2023,
+o qual indica que será um ano com boa segurança energética.
+
+# Apêndice
+
+```{r get-labels, echo = FALSE}
+labs <- knitr::all_labels()
+labs <- setdiff(labs, c("get-labels"))
+```
+
+```{r ref.label=labs, echo=TRUE, eval=FALSE}
+```
+
+# Referências
