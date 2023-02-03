@@ -10,7 +10,7 @@ format:
   revealjs:
     bibliography: images/bib.bib
     slide-number: c/t
-    theme: beige #dark
+    theme: default
     logo: "images/logo2.png"
     smaller: True
 editor_options: 
