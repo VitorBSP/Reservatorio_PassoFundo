@@ -1,0 +1,591 @@
+---
+title: "Um estudo temporal do volume útil da usina hidrelétrica de Passo Fundo em 2023"
+subtitle: "  "
+author: "Vítor Pereira"
+institute: "Estatística - UFSM"
+title-slide-attributes:
+  data-background-size: contain
+  data-background-opacity: "0.2"
+format:
+  revealjs:
+    bibliography: images/bib.bib
+    slide-number: c/t
+    theme: sky #dark
+    logo: "images/logo2.png"
+    smaller: True
+editor_options: 
+  chunk_output_type: inline
+---
+
+## Sumário
+
+<hr/>
+
+<br/>
+<p>
+
+- Motivação
+
+<p>
+
+- Série Temporal do Reservatório Passo Fundo
+
+<p>
+
+- Ajuste dos Modelos 
+
+<p>
+
+- Avaliação dos Modelos
+
+
+<p>
+
+- Análise de Resíduo
+
+<p>
+
+- Predição 
+
+```{r}
+
+options(digits = 3)  
+options(scipen = 999)
+ggplot2::theme_set(ggplot2::theme_minimal()) 
+knitr::opts_chunk$set(echo=F, message=F, warning=F, fig.pos = 'H', 
+                      fig.align = 'center', fig.width = 6, fig.height= 3.4)
+scale_fill_discrete = \(...) ggplot2::scale_fill_brewer(... , palette = "Set2")
+
+library(forecast)
+library(ggplot2)
+library(patchwork)
+library(ggfortify)
+library(dplyr)
+library(fracdiff)
+library(tseries)
+library(kableExtra)
+
+
+normal_teste = function(df, serie = ""){
+  data.frame(Teste = c('Shapiro Wilk', "Jarque-bera"),
+             p.value = c(shapiro.test(df)$p.value,
+                         tseries::jarque.bera.test(df)$p.value)
+             ) |> 
+    mutate(p.value = format.pval(p.value, eps = 0.001)) |> 
+    fastrep::tbl(paste('P-valores associados aos testes de normalidade para 
+                           a série', serie))
+}
+
+df <- readr::read_csv("data/Capacidade_Reservatório.csv")
+reservatorio <- df$Capacidade.Reservatório/100 # percentage
+reservatorio <- ts(reservatorio,start=c(2013,2),frequency=12) # time series
+n = length(reservatorio)
+h1 <- 12
+
+# Taking off the last 12 observations
+n_treino<-n-h1
+
+reservatorio_treino <-ts(reservatorio[1:n_treino], start=c(2013,2), frequency = 12)
+reservatorio_teste <- ts(reservatorio[(n_treino+1):n], start=c(2021,2), frequency = 12) 
+
+```
+
+
+
+## {auto-animate=true}
+
+::: {style="margin-top: 200px; font-size: 3em; font-weight: bold;"}
+Motivação
+:::
+
+
+## {auto-animate=true}
+
+::: {style="margin-top: 10px; font-size: 2em; font-weight: bold;"}
+Motivação da escolha de dados hidroambientais
+:::
+
+
+<hr/>
+<br/>
+
+<p>
+
+- Usinas hidrelétricas são fontes de energia renovável e limpas;
+
+<p>
+
+- 65% da geração de energia elétrica no país provém de reservatórios hidrelétricos;
+
+<p>
+
+- Brasil é um dos pioneiros no uso da energia;
+
+<p>
+
+- Abundância de rios, enormes bacias hidrográficas e aquífero guarani. 
+
+## {auto-animate=true}
+
+::: {style="margin-top: 10px; font-size: 2em; font-weight: bold;"}
+Motivação da escolha da Usina de Passo Fundo
+:::
+
+
+<hr/>
+<br/>
+<br/>
+<p>
+
+- Uma das maiores usinas do Sul do país;
+
+<p>
+
+- Responsável por 6% da energia hidrelétrica brasileira;
+
+<p>
+
+- Linhas de  transmissão que ligam Passo Fundo às cidades de Porto Alegre, São Leopoldo e Santa Maria
+
+
+## {auto-animate=true}
+
+::: {style="margin-top: 200px; font-size: 3em; font-weight: bold;"}
+Série Temporal do Reservatório Passo Fundo
+:::
+
+
+## {auto-animate=true}
+
+::: {style="margin-top: 10px; font-size: 2em; font-weight: bold;"}
+Série Temporal do Reservatório Passo Fundo
+:::
+
+
+```{r n1, fig.cap='Distribuição do volume da Usina Hidrelétrica de Passo Fundo ao longo do tempo.'}
+reservatorio |> 
+  autoplot()
+```
+
+## {auto-animate=true}
+
+::: {style="margin-top: 10px; font-size: 2em; font-weight: bold;"}
+Série Temporal do Reservatório Passo Fundo
+:::
+
+
+```{r n2, fig.cap="Funções de Autocorrelação e Autocorrelação Parcial do Volume Útil de água na Usina de Passo Fundo"}
+ggAcf(reservatorio) + labs(title='FAC') + 
+  ggPacf(reservatorio) + labs(title='FACP')
+```
+
+
+## {auto-animate=true}
+
+::: {style="margin-top: 10px; font-size: 2em; font-weight: bold;"}
+Série Temporal do Reservatório Passo Fundo
+:::
+
+```{r}
+medidas = fastrep::describe(tibble('volume util' = reservatorio)) %>% 
+  select(Média = mean, Mediana = median, `Desvio Padrão` = sd, Mínimo = min, 
+         Máximo = max) %>% 
+  t()
+
+medidas = medidas %>% tibble(Medidas=rownames(medidas))
+colnames(medidas) = c("Volume útil", "Medidas")
+```
+
+
+```{r tab1}
+medidas %>% select(Medidas, `Volume útil`) %>% 
+  fastrep::tbl("Resumo descritivo da variável volume útil do reservatório Passo Fundo.")
+```
+
+```{r}
+source("analise_barmax/barma.r")
+source("analise_barmax/best.barma.r")
+source("KARMA_BARMA/karma.r")
+```
+## {auto-animate=true}
+
+::: {style="margin-top: 200px; font-size: 3em; font-weight: bold;"}
+Ajuste dos Modelos 
+:::
+
+
+## {auto-animate=true}
+
+::: {style="margin-top: 10px; font-size: 2em; font-weight: bold;"}
+Ajuste dos Modelos 
+:::
+
+```{r}
+mX <- 1:n_treino # covariavel para modelar a tendencia (dentro do intervalo)
+mX_hat <- (n_treino+1):(n_treino+h1) # ocorrencias da covariavel usadas para previsoes
+
+C<-cos(2*pi*mX/12) # in sample 
+C_hat<-cos(2*pi*mX_hat/12) # out of sample
+
+S<-sin(2*pi*mX/12) # in sample
+S_hat<-sin(2*pi*mX_hat/12) # out of sample
+
+mX2 <-cbind(1:n_treino, cos(2*pi*(1:n_treino)/52)) # covariavel para modelar a tendencia (dentro do intervalo)
+mX_hat2 <- cbind((n_treino+1):(n_treino+h1), cos(2*pi*((n_treino+1):(n_treino+h1))/52))# ocorrencias da covariavel usadas para previsoes
+
+mX_barma<-cbind(mX,C) # in sample
+mX_hat_barma<-cbind(mX_hat,C_hat) # out of sample
+```
+
+
+
+::: {.panel-tabset}
+
+
+### KARMA (5,4)
+
+```{r results=F, include=FALSE, echo=F}
+fit_karma = karma(reservatorio_treino,ar=c(3,5),ma=c(1,2,3,4),h=h1,diag=1,
+                  X = C, X_hat = C_hat)
+
+fit_karma2 = karma(reservatorio_treino,ar=c(1,2,3,5),ma=c(1,2,3),h=h1,diag=1, 
+                   X = C, X_hat = C_hat)
+```
+
+
+```{r t5}
+fit_karma$model |> as.data.frame() |> 
+  mutate(`Pr(>|z|)` = format.pval(`Pr(>|z|)`, eps = 0.001)) |>  
+  select(Estimativa = Estimate, `Erro Padrão` =  `Std. Error`, 
+         `Valor Z` = `z value`, `P-valor` = `Pr(>|z|)`) |>
+  fastrep::tbl("Resumo do Ajuste do Modelo KARMA(5,4)")
+```
+
+
+### KARMA (5,3)
+
+```{r t6}
+fit_karma2$model |> as.data.frame() |> 
+  mutate(`Pr(>|z|)` = format.pval(`Pr(>|z|)`, eps = 0.001)) |>  
+  select(Estimativa = Estimate, `Erro Padrão` =  `Std. Error`, 
+         `Valor Z` = `z value`, `P-valor` = `Pr(>|z|)`) |>
+  fastrep::tbl("Resumo do Ajuste do Modelo KARMA(5,3)")
+```
+
+### ARMA(2,0)
+
+```{r results=F, include=FALSE, echo=F}
+modelo1=auto.arima(reservatorio_treino, max.p=5, max.q=5, max.P=0, max.Q=0, 
+                   max.order=5, max.d=2, max.D=0, start.p=1, start.q=1, 
+                   start.P=1, start.Q=1, xreg=mX2)
+
+coef_arma = lmtest::coeftest(modelo1)
+
+table_modelo1 = tibble(Coeficientes = c(names(modelo1$coef)),
+                           Estimativa = modelo1$coef,
+                          `Erro padrão` = coef_arma[,2],
+                          `Valor Z` = coef_arma[,3],
+                          `P-valor` = coef_arma[,4]
+                           )
+```
+
+
+```{r t2}
+table_modelo1 |>  
+  mutate(`P-valor` = format.pval(`P-valor`, eps = 0.001)) |>
+  fastrep::tbl("Resumo do Ajuste do Modelo ARMA")
+```
+
+
+### BARMA (6,6) 
+```{r results=F, include=FALSE, echo=F}
+fit_barma<-barma(reservatorio_treino,ar=c(1,2,3,4,5,6),ma=c(1,2,3,4,5,6),h=h1, 
+                 diag=1, X = C, X_hat = C_hat)
+
+fit_barma2<-barma(reservatorio_treino,ar=c(1,2,3,4),ma=c(1,2),h=h1,diag=1,
+                  X = mX_barma, X_hat = mX_hat_barma)
+```
+
+
+```{r t3}
+fit_barma$model |> as.data.frame() |> 
+  mutate(`Pr(>|z|)` = format.pval(`Pr(>|z|)`, eps = 0.001)) |>  
+  select(Estimativa = Estimate, `Erro Padrão` =  `Std. Error`, 
+         `Valor Z` = `z value`, `P-valor` = `Pr(>|z|)`) |>
+  fastrep::tbl("Resumo do Ajuste do Modelo BARMA(6,6)")
+```
+
+### BARMA(4,2)
+
+
+```{r t4}
+fit_barma2$model |> as.data.frame() |> 
+  mutate(`Pr(>|z|)` = format.pval(`Pr(>|z|)`, eps = 0.001)) |>  
+  select(Estimativa = Estimate, `Erro Padrão` =  `Std. Error`, 
+         `Valor Z` = `z value`, `P-valor` = `Pr(>|z|)`) |>
+  fastrep::tbl("Resumo do Ajuste do Modelo BARMA(4,2)")
+```
+
+:::
+
+## {auto-animate=true}
+
+::: {style="margin-top: 10px; font-size: 2em; font-weight: bold;"}
+Ajuste dos Modelos
+:::
+
+```{r}
+residuos_arma = as.vector(modelo1$residuals)
+residuos_barma1 = as.vector(reservatorio_treino-fit_barma$fitted)[7:n_treino]
+residuos_barma2 = as.vector(reservatorio_treino-fit_barma2$fitted)[7:n_treino]
+residuos_karma1 = as.vector(reservatorio_treino-fit_karma$fitted)[6:n_treino]
+residuos_karma2 = as.vector(reservatorio_treino-fit_karma2$fitted)[6:n_treino]
+
+```
+```{r results=F, include=FALSE, echo=F}
+
+(eqm_barma1 = (sum(residuos_barma1^2))/length(residuos_barma1))
+(eqm_barma2 = (sum(residuos_barma2^2))/length(residuos_barma2))
+(eqm_karma1 = (sum(residuos_karma1^2))/length(residuos_karma1))
+(eqm_karma2 = (sum(residuos_karma2^2))/length(residuos_karma2))
+(eqm_arma = (sum(residuos_arma^2))/length(residuos_arma))
+
+############### MAPE #################
+
+(maple_barma1 = sum( abs(residuos_barma1)/abs(reservatorio_treino[6:n_treino]))/ 
+   length(residuos_barma1))
+(maple_barma2 = sum( abs(residuos_barma2)/abs(reservatorio_treino[7:n_treino]))/
+    length(residuos_barma2))
+(maple_karma1 = sum( abs(residuos_karma1)/abs(reservatorio_treino[6:n_treino]))/ 
+   length(residuos_karma1))
+(maple_karma2 = sum( abs(residuos_karma2)/abs(reservatorio_treino[6:n_treino]))/
+    length(residuos_karma2))
+(maple_arma = sum( abs(residuos_arma)/abs(reservatorio_treino) )/ 
+    length(residuos_arma))
+
+###################### EQM e MAPE período previsao #######################
+
+predict_arma=predict(modelo1, n.ahead=h1, newxreg = mX2)
+
+############### EQM #################
+residuos_beta_prev1 = (reservatorio_teste-fit_barma$forecast)
+residuos_beta_prev2 = (reservatorio_teste-fit_barma2$forecast)
+residuos_kuma_prev1 = (reservatorio_teste-fit_karma$forecast)
+residuos_kuma_prev2 = (reservatorio_teste-fit_karma2$forecast)
+residuos_arma_prev = (reservatorio_teste-as.vector(predict_arma$pred[1:h1]))
+
+(eqm_beta_prev = (sum(residuos_beta_prev1^2))/length(residuos_beta_prev1))
+(eqm_beta_prev2 = (sum(residuos_beta_prev2^2))/length(residuos_beta_prev2))
+(eqm_kuma_prev = (sum(residuos_kuma_prev2^2))/length(residuos_kuma_prev1))
+(eqm_kuma_prev2 = (sum(residuos_kuma_prev1^2))/length(residuos_kuma_prev2))
+(eqm_arma_prev = (sum(residuos_arma_prev^2))/length(residuos_arma_prev))
+
+
+############### MAPE #################
+
+(maple_beta_prev = sum( abs(residuos_beta_prev1)/abs(reservatorio_teste) )/ 
+   length(residuos_beta_prev1))
+(maple_beta_prev2 = sum( abs(residuos_beta_prev2)/abs(reservatorio_teste) )/ 
+    length(residuos_beta_prev2))
+(maple_kuma_prev = sum( abs(residuos_kuma_prev1)/abs(reservatorio_teste) )/ 
+    length(residuos_kuma_prev1))
+(maple_kuma_prev2 = sum( abs(residuos_kuma_prev2)/abs(reservatorio_teste) )/ 
+    length(residuos_kuma_prev2))
+(maple_ar_prev = sum( abs(residuos_arma_prev)/abs(reservatorio_teste) )/ 
+    length(residuos_arma_prev))
+
+```
+
+
+```{r t7}
+tibble('Modelo' = c('ARMA(2,0)', 'BARMA(6,6)', 'BARMA(4,2)', 'KARMA(5,4)', 
+                    'KARMA(5,3)'),
+       'EQM TREINO' = c(eqm_arma, eqm_barma1, eqm_barma2, eqm_karma1, 
+                        eqm_karma1),
+       'MAPE TREINO' = c(maple_arma, maple_barma1, maple_barma2, maple_karma1,
+                         maple_karma2),
+       'EQM TESTE' = c(eqm_arma_prev, eqm_beta_prev, eqm_beta_prev2,
+                       eqm_kuma_prev, eqm_kuma_prev2),
+       'MAPE TESTE' = c(maple_ar_prev, maple_beta_prev, maple_beta_prev2, 
+                        maple_kuma_prev, maple_kuma_prev2)) |>
+  fastrep::tbl("Métricas de Avaliação dos Modelos")
+```
+
+## {auto-animate=true}
+
+::: {style="margin-top: 200px; font-size: 3em; font-weight: bold;"}
+Análise de Resíduos
+:::
+
+
+## {auto-animate=true}
+
+::: {style="margin-top: 10px; font-size: 2em; font-weight: bold;"}
+Análise de Resíduos
+:::
+
+```{r res, fig.cap="ACF e PACF dos resíduos do Modelo ARMA e KARMA"}
+resi1=as.vector(residuals(modelo1))
+resi_padrao1=as.vector((modelo1$residuals)/(sd(resi1)))
+res=fit_karma$resid1
+
+(ggAcf(res) + labs(title='Resíduo KARMA') | ggPacf(res) + 
+  labs(title='Resíduo KARMA'))/
+  (ggAcf(resi_padrao1) + labs(title='Resíduo ARMA') | ggPacf(resi_padrao1) + 
+  labs(title='Resíduo ARMA'))
+  
+```
+
+
+## {auto-animate=true}
+
+::: {style="margin-top: 10px; font-size: 2em; font-weight: bold;"}
+Análise de Resíduos
+:::
+
+```{r res3, fig.cap="Resíduos versus índices dos Modelos ARMA e KARMA"}
+df_resi<-data.frame(resi_padrao1)
+df_res<-data.frame(res)
+ggplot(df_resi)+
+  geom_point(aes(x=1:nrow(df_resi),y=resi_padrao1),size=0.8) +
+  labs(x="Índice",y="Resíduo", title='ARMA')+
+  geom_hline(yintercept = -2,linetype="dashed",colour = "orange", 
+             linewidth=0.3)+
+  geom_hline(yintercept = -3,linetype="longdash",colour = "orange", 
+             linewidth=0.3)+
+  geom_hline(yintercept = 2,linetype="dashed",colour = "red", 
+             linewidth=0.3)+
+  geom_hline(yintercept = 3,linetype="longdash",colour = "red", 
+             linewidth=0.3) +
+  ggplot(df_res)+
+  geom_point(aes(x=1:nrow(df_res),y=res),size=0.8) +
+  labs(x="Índice",y="Resíduo", title='KARMA')+
+  geom_hline(yintercept = -2,linetype="dashed",colour = "orange", 
+             linewidth=0.3)+
+  geom_hline(yintercept = -3,linetype="longdash",colour = "orange", 
+             linewidth=0.3)+
+  geom_hline(yintercept = 2,linetype="dashed",colour = "red", 
+             linewidth=0.3)+
+  geom_hline(yintercept = 3,linetype="longdash",colour = "red", 
+             linewidth=0.3)
+
+```
+
+
+## {auto-animate=true}
+
+::: {style="margin-top: 10px; font-size: 2em; font-weight: bold;"}
+Análise de Resíduos
+:::
+
+```{r pvalue}
+
+tibble(Modelo = c('ARMA', 'KARMA'), 
+       `Teste ADF` = c(adf.test(resi_padrao1)$p.value,adf.test(res)$p.value),
+       `Normalidade` = c(shapiro.test(resi_padrao1)$p.value, 
+                         shapiro.test(res)$p.value),
+       `Ljung-Box` = c(Box.test(resi_padrao1, lag = 30, type = c("Ljung-Box"), 
+                                fitdf = 0)$p.value,
+                       Box.test(res, lag = 20, type = c("Ljung-Box"), 
+                                fitdf = 0)$p.value)) |>
+  fastrep::tbl("P-valores dos testes estatísticos")
+
+```
+
+
+## {auto-animate=true}
+
+::: {style="margin-top: 200px; font-size: 3em; font-weight: bold;"}
+Predição
+:::
+
+
+## {auto-animate=true}
+
+::: {style="margin-top: 10px; font-size: 2em; font-weight: bold;"}
+Predição
+:::
+
+```{r pred, fig.cap="Ajuste e previsão de 12 meses do modelo KARMA"}
+tempo<-seq(as.Date("2013/02/01"), by = "month", length.out = 120) 
+df3<-data.frame(tempo, reservatorio, 
+                pred=c(fit_karma$fitted,fit_karma$forecast))
+ggplot(df3)+
+  geom_line(aes(x=tempo,y=reservatorio))+
+  geom_line(aes(x=tempo,y=pred),colour = "red")+
+  geom_vline(xintercept = as.Date("2021/11/01"),linetype="dashed", 
+             colour = "black",size=0.5)+
+  labs(x="Tempo (meses)",
+       y="Taxa de desocupação")
+```
+
+## {auto-animate=true}
+
+::: {style="margin-top: 10px; font-size: 2em; font-weight: bold;"}
+Predição
+:::
+
+```{r results=F, include=FALSE, echo=F}
+mX <- 1:n # covariavel para modelar a tendencia (dentro do intervalo)
+mX_hat <- (n+1):(n+h1) # ocorrencias da covariavel usadas para previsoes
+
+C<-cos(2*pi*mX/12) # in sample 
+C_hat<-cos(2*pi*mX_hat/12) # out of sample
+fit_karma = karma(reservatorio,ar=c(3,5),ma=c(1,2,3,4),h=h1,diag=1,
+                  X = C, X_hat = C_hat)
+tempo<-seq(as.Date("2013/02/01"), by = "month", length.out = 132)
+```
+
+
+```{r prev, fig.cap="Previsão do volume útil do reservatório Passo Fundo em 2023"}
+df3<-data.frame(serie=c(reservatorio,fit_karma$forecast), 
+                predicao=c(rep("Série", length(reservatorio)), 
+                           rep("Predição", length(fit_karma$forecast))),
+                tempo=tempo)
+ggplot(df3)+
+  geom_line(aes(x=tempo,y=serie, colour=predicao))+
+  geom_vline(xintercept = as.Date("2023/01/01"),linetype="dashed", 
+             colour = "black",size=0.5)+
+  labs(x="Tempo (meses)",
+       y="Taxa de desocupação")
+```
+
+
+
+## {auto-animate=true}
+
+::: {style="margin-top: 200px; font-size: 3em; font-weight: bold;"}
+Conclusão
+:::
+
+
+## {auto-animate=true}
+
+::: {style="margin-top: 10px; font-size: 2em; font-weight: bold;"}
+Conclusão
+:::
+
+<hr/>
+<br/>
+<br/>
+
+<p>
+
+- KARMA se mostrou superior aos modelo ARMA e $\beta$ ARMA; 
+
+
+<p>
+
+- Tanto o modelo ARMA, quanto KARMA apresentam bom ajuste, conforme podemos concluir pela análise dos resíduos. 
+
+
+<p>
+
+-  Previsão do volume útil no ano de 2023, o qual indica que será um ano com boa segurança energética.
+
+
+## Bibliografia
+
+::: footer
+Fim.
+:::
