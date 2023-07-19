@@ -1,10 +1,7 @@
 ---
 title: "Um estudo temporal do volume útil da usina hidrelétrica de Passo Fundo em 2023"
 author: "Vítor Pereira"
-abstract: "O atual trabalho pretende visa utilizar a abordagem de séries temporais
-com taxas e proporções para a análise do nível do volume útil na usina hidrelétrica de Passo
-Fundo. Visando compreender comportamento do volume útil nos 
-meses futuros, para possibilitar a definição de medidas de seguranças para garantir o fornecimento de energia. Para isso, verificou-se que o modelo com melhor ajuste foi o modelo Kumaraswamy autorregressivo de médias móveis (KARMA), modelo que utiliza a distribuição Kumaraswamy a qual possui suporte para taxas e proporções e é históricamente usados para dados hidrológicos."
+abstract: "O atual trabalho pretende visa utilizar a abordagem de séries temporais com taxas e proporções para a análise do nível do volume útil na usina hidrelétrica de Passo Fundo. Visando compreender comportamento do volume útil nos meses futuros, para possibilitar a definição de medidas de seguranças para garantir o fornecimento de energia. Para isso, verificou-se que o modelo com melhor ajuste foi o modelo Kumaraswamy autorregressivo de médias móveis (KARMA), modelo que utiliza a distribuição Kumaraswamy a qual possui suporte para taxas e proporções e é históricamente usados para dados hidrológicos."
 header-includes:
    - \usepackage[brazil]{babel}
    - \usepackage{bm}
@@ -23,7 +20,6 @@ link-citations: true
 
 
 ```{r setup, include=F}
-
 options(digits = 3)  
 options(scipen = 999)
 ggplot2::theme_set(ggplot2::theme_minimal()) 
@@ -39,8 +35,10 @@ library(dplyr)
 library(fracdiff)
 library(tseries)
 library(kableExtra)
+```
 
 
+```{r include=F}
 normal_teste = function(df, serie = ""){
   data.frame(Teste = c('Shapiro Wilk', "Jarque-bera"),
              p.value = c(shapiro.test(df)$p.value,
